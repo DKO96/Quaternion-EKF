@@ -1,0 +1,37 @@
+services:
+    sim:
+        # Image containing ROS2 Jazzy
+        image: jazzy-imu:latest
+        container_name: ekf-dev
+
+        # ---- Networking -------------------------------------------------
+        network_mode: host
+        ipc: host
+
+        # ---- Environment ------------------------------------------------
+        environment:
+            DISPLAY: ${DISPLAY}
+            NVIDIA_VISIBLE_DEVICES: all
+            NVIDIA_DRIVER_CAPABILITIES: all
+            XDG_RUNTIME_DIR: /tmp/runtime-docker
+
+        # ---- Volumes ----------------------------------------------------
+        volumes:
+            - /tmp/.X11-unix:/tmp/.X11-unix:rw
+            - ~/Documents/SE/ROS_EKF/PX4-Autopilot:/home/ubuntu/PX4-Autopilot
+            - ~/Documents/SE/ROS_EKF/ekf_ws:/home/ubuntu/ekf_ws
+
+        # ---- GPU --------------------------------------------------------
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                        - capabilities: [gpu]
+
+        # ---- User -------------------------------------------------------
+        user: "1000:1000"
+        tty: true
+        stdin_open: true
+        restart: unless-stopped
+
+
