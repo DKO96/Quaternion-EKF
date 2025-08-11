@@ -1,0 +1,11 @@
+/PX4-Autopilot
+/deprecated
+
+/ekf_ws/build
+/ekf_ws/install
+/ekf_ws/log
+
+/ekf_ws/src/px4_msgs
+/ekf_ws/src/px4_ros_com
+
+.vscode/settings/json
