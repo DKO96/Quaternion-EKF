@@ -16,10 +16,17 @@ find_package(px4_msgs REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
 
+set(INCLUDE_DIRECTORIES
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
 add_executable(ekf src/ekf.cpp)
-ament_target_dependencies(ekf rclcpp px4_msgs std_msgs)
+target_include_directories(ekf PUBLIC ${INCLUDE_DIRS})
+ament_target_dependencies(ekf rclcpp px4_msgs std_msgs Eigen3)
 
 add_executable(quaternion_tf src/quaternion_tf.cpp)
+target_include_directories(ekf PUBLIC ${INCLUDE_DIRS})
 ament_target_dependencies(quaternion_tf rclcpp px4_msgs geometry_msgs tf2 tf2_ros Eigen3)
 
 add_executable(px4_offboard src/px4_offboard.cpp)
@@ -33,6 +40,9 @@ install(TARGETS
 
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME})
+
+install(DIRECTORY include
+  DESTINATION include)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
