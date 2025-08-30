@@ -1,99 +1,249 @@
-#include <Eigen/Dense>
-#include <chrono>
-#include <cstdio>
-#include <iostream>
-#include <px4_msgs/msg/sensor_combined.hpp>
-#include <px4_msgs/msg/sensor_mag.hpp>
-#include <px4_msgs/msg/vehicle_attitude.hpp>
-#include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/string.hpp>
-#include <string>
+#include "ekf_imu/ekf.hpp"
 
-using namespace std::chrono_literals;
+#include <math.h>
 
-class EKF : public rclcpp::Node {
- public:
-  EKF() : Node("ekf") {
-    rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
-    auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5),
-                           qos_profile);
+EKF::EKF(std::array<double, 3> noises) : noises_(noises) {
+  x_check_.setZero();
+  P_check_.setZero();
+  x_hat_.setZero();
+  P_hat_.setZero();
 
-    subscription_imu_ =
-        this->create_subscription<px4_msgs::msg::SensorCombined>(
-            "/fmu/out/sensor_combined", qos,
-            [this](px4_msgs::msg::SensorCombined::UniquePtr msg) {
-              this->timestamp_ = msg->timestamp;
-              this->gyr_x_ = msg->gyro_rad[0];
-              this->gyr_y_ = msg->gyro_rad[1];
-              this->gyr_z_ = msg->gyro_rad[2];
-              this->acc_x_ = msg->accelerometer_m_s2[0];
-              this->acc_y_ = msg->accelerometer_m_s2[1];
-              this->acc_z_ = msg->accelerometer_m_s2[2];
-            });
+  const double sigma_g2 = noises_[0] * noises_[0];
+  const double sigma_a2 = noises_[1] * noises_[1];
+  const double sigma_m2 = noises_[2] * noises_[2];
 
-    subscription_mag_ = this->create_subscription<px4_msgs::msg::SensorMag>(
-        "/fmu/out/sensor_mag", qos,
-        [this](px4_msgs::msg::SensorMag::UniquePtr msg) {
-          this->mag_x_ = msg->x;
-          this->mag_y_ = msg->y;
-          this->mag_z_ = msg->z;
-        });
+  Q_.setIdentity();
+  Q_ *= sigma_g2;
 
-    subscription_attitude_ =
-        this->create_subscription<px4_msgs::msg::VehicleAttitude>(
-            "/fmu/out/vehicle_attitude", qos,
-            [this](px4_msgs::msg::VehicleAttitude::UniquePtr msg) {
-              this->q_w_ = msg->q[0];
-              this->q_x_ = msg->q[1];
-              this->q_y_ = msg->q[2];
-              this->q_z_ = msg->q[3];
-            });
+  R_.setZero();
+  R_.block<3, 3>(0, 0).setIdentity();
+  R_.block<3, 3>(0, 0) *= sigma_a2;
+  R_.block<3, 3>(3, 3).setIdentity();
+  R_.block<3, 3>(3, 3) *= sigma_m2;
 
-    sensor_publisher_ =
-        this->create_publisher<std_msgs::msg::String>("sensor_listener", 10);
-    auto timer_callback = [this]() -> void {
-      auto message = std_msgs::msg::String();
-      message.data = std::string("\n") +
-                     "gyr_x: " + std::to_string(this->gyr_x_) + " " +
-                     "gyr_y: " + std::to_string(this->gyr_y_) + " " +
-                     "gyr_z: " + std::to_string(this->gyr_z_) + "\n" +
-                     "acc_x: " + std::to_string(this->acc_x_) + " " +
-                     "acc_y: " + std::to_string(this->acc_y_) + " " +
-                     "acc_z: " + std::to_string(this->acc_z_) + "\n" +
-                     "mag_x: " + std::to_string(this->mag_x_) + " " +
-                     "mag_y: " + std::to_string(this->mag_y_) + " " +
-                     "mag_z: " + std::to_string(this->mag_z_) + "\n" +
-                     "q_w: " + std::to_string(this->q_w_) + " " +
-                     "q_x: " + std::to_string(this->q_x_) + " " +
-                     "q_y: " + std::to_string(this->q_y_) + " " +
-                     "q_z: " + std::to_string(this->q_z_) + "\n";
-      RCLCPP_INFO(this->get_logger(), "'%s'", message.data.c_str());
-      this->sensor_publisher_->publish(message);
-    };
-    timer_ = this->create_wall_timer(100ms, timer_callback);
-  }
+  g_ << 0.0, 0.0, 1.0;
 
- private:
-  uint64_t timestamp_{};
-  float gyr_x_{}, gyr_y_{}, gyr_z_{};
-  float acc_x_{}, acc_y_{}, acc_z_{};
-  float mag_x_{}, mag_y_{}, mag_z_{};
-  float q_w_{}, q_x_{}, q_y_{}, q_z_{};
+  const double theta = -0.17715091907742445;
+  r_ << std::cos(theta), 0.0, std::sin(theta);
+}
 
-  rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr
-      subscription_imu_;
-  rclcpp::Subscription<px4_msgs::msg::SensorMag>::SharedPtr subscription_mag_;
-  rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr
-      subscription_attitude_;
-  rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr sensor_publisher_;
-};
+template <int N>
+Eigen::Matrix<double, N, 1> EKF::normalize(
+    const Eigen::Matrix<double, N, 1> &v) const {
+  return v / v.norm();
+}
 
-int main(int argc, char *argv[]) {
-  std::cout << "Starting sensor listener node..." << std::endl;
-  setvbuf(stdout, NULL, _IONBF, BUFSIZ);
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<EKF>());
-  rclcpp::shutdown();
-  return 0;
+Eigen::Matrix3d EKF::skew(const Eigen::Vector3d &v) const {
+  Eigen::Matrix3d S;
+  S(0, 0) = 0.0;
+  S(0, 1) = -v(2);
+  S(0, 2) = v(1);
+
+  S(1, 0) = v(2);
+  S(1, 1) = 0.0;
+  S(1, 2) = -v(0);
+
+  S(2, 0) = -v(1);
+  S(2, 1) = v(0);
+  S(2, 2) = 0.0;
+
+  return S;
+}
+
+Eigen::Matrix4d EKF::Omega(const Eigen::Vector3d &w) const {
+  Eigen::Matrix4d W;
+  W(0, 0) = 0.0;
+  W(0, 1) = -w(0);
+  W(0, 2) = -w(1);
+  W(0, 3) = -w(2);
+
+  W(1, 0) = w(0);
+  W(1, 1) = 0.0;
+  W(1, 2) = w(2);
+  W(1, 3) = -w(1);
+
+  W(2, 0) = w(1);
+  W(2, 1) = -w(2);
+  W(2, 2) = 0.0;
+  W(2, 3) = w(0);
+
+  W(3, 0) = w(2);
+  W(3, 1) = w(1);
+  W(3, 2) = -w(0);
+  W(3, 3) = 0.0;
+
+  return W;
+}
+
+Eigen::Matrix3d EKF::q2R(const Eigen::Vector4d &q) const {
+  Eigen::Matrix3d R;
+  R(0, 0) = q(0) * q(0) + q(1) * q(1) - q(2) * q(2) - q(3) * q(3);
+  R(0, 1) = 2 * (q(1) * q(2) - q(0) * q(3));
+  R(0, 2) = 2 * (q(0) * q(2) + q(1) * q(3));
+
+  R(1, 0) = 2 * (q(1) * q(2) + q(0) * q(3));
+  R(1, 1) = q(0) * q(0) - q(1) * q(1) + q(2) * q(2) - q(3) * q(3);
+  R(1, 2) = 2 * (q(2) * q(3) - q(0) * q(1));
+
+  R(2, 0) = 2 * (q(1) * q(3) - q(0) * q(2));
+  R(2, 1) = 2 * (q(0) * q(1) + q(2) * q(3));
+  R(2, 2) = q(0) * q(0) - q(1) * q(1) - q(2) * q(2) + q(3) * q(3);
+
+  return R;
+}
+
+Eigen::Vector4d EKF::f(const Eigen::Vector4d &x_hat, const Eigen::Vector3d &gyr,
+                       double dt) const {
+  Eigen::Vector4d q_check = x_hat + 0.5 * dt * EKF::Omega(gyr) * x_hat;
+
+  return EKF::normalize(q_check);
+}
+
+Eigen::Matrix4d EKF::F(const Eigen::Vector3d &gyr, double dt) const {
+  return Eigen::Matrix4d::Identity() + 0.5 * dt * EKF::Omega(gyr);
+}
+
+Eigen::Matrix<double, 4, 3> EKF::W(const Eigen::Vector4d &x_hat,
+                                   double dt) const {
+  const double qw = x_hat(0);
+  const Eigen::Vector3d qv = x_hat.tail<3>();
+
+  Eigen::Matrix<double, 4, 3> W;
+
+  W.row(0) = -0.5 * dt * qv.transpose();
+
+  Eigen::Matrix3d block = qw * Eigen::Matrix3d::Identity() - EKF::skew(qv);
+
+  W.block<3, 3>(1, 0) = 0.5 * dt * block;
+
+  return W;
+}
+
+Eigen::Matrix<double, 6, 1> EKF::h(const Eigen::Vector4d &x_check) const {
+  Eigen::Matrix<double, 6, 1> est_measurement;
+  const Eigen::Matrix3d R = EKF::q2R(x_check);
+  // Eigen::Vector3d a_check = R.transpose() * this->g_;
+  // Eigen::Vector3d m_check = R.transpose() * this->r_;
+  Eigen::Vector3d a_check = R * this->g_;
+  Eigen::Vector3d m_check = R * this->r_;
+
+  Eigen::Matrix<double, 6, 1> z_check;
+  z_check << a_check, m_check;
+
+  return z_check;
+}
+
+static Eigen::Matrix<double, 3, 4> temp_block(const Eigen::Vector3d &n,
+                                              const Eigen::Vector4d &q) {
+  Eigen::Matrix<double, 3, 4> T;
+
+  T(0, 0) = 2 * (n(0) * q(0) + n(1) * q(3) - n(2) * q(2));
+  T(0, 1) = 2 * (n(0) * q(1) + n(1) * q(2) + n(2) * q(3));
+  T(0, 2) = 2 * (-n(0) * q(2) + n(1) * q(1) - n(2) * q(0));
+  T(0, 3) = 2 * (-n(0) * q(3) + n(1) * q(0) + n(2) * q(1));
+
+  T(1, 0) = 2 * (-n(0) * q(3) + n(1) * q(0) + n(2) * q(1));
+  T(1, 1) = 2 * (-n(0) * q(2) - n(1) * q(1) + n(2) * q(0));
+  T(1, 2) = 2 * (n(0) * q(1) + n(1) * q(2) + n(2) * q(3));
+  T(1, 3) = 2 * (-n(0) * q(0) - n(1) * q(3) + n(2) * q(2));
+
+  T(2, 0) = 2 * (n(0) * q(2) - n(1) * q(1) + n(2) * q(0));
+  T(2, 1) = 2 * (n(0) * q(3) - n(1) * q(0) - n(2) * q(1));
+  T(2, 2) = 2 * (n(0) * q(0) + n(1) * q(3) - n(2) * q(2));
+  T(2, 3) = 2 * (n(0) * q(1) + n(1) * q(2) + n(2) * q(3));
+
+  return T;
+}
+
+Eigen::Matrix<double, 6, 4> EKF::H(const Eigen::Vector4d &x_check) const {
+  Eigen::Matrix<double, 6, 4> H;
+
+  H.topRows<3>() = temp_block(this->g_, x_check);
+  H.bottomRows<3>() = temp_block(this->r_, x_check);
+
+  return H;
+}
+
+Eigen::Vector4d EKF::initial_state(const Eigen::Vector3d &acc,
+                                   const Eigen::Vector3d &mag) {
+  // Eigen::Vector3d H_norm = EKF::normalize(mag.cross(acc));
+  // Eigen::Vector3d a_norm = EKF::normalize(acc);
+
+  // Eigen::Vector3d M = a_norm.cross(H_norm);
+
+  Eigen::Vector3d a_norm = EKF::normalize(acc);
+  Eigen::Vector3d H_norm = EKF::normalize(a_norm.cross(mag));
+  Eigen::Vector3d M = EKF::normalize(H_norm.cross(a_norm));
+
+  Eigen::Matrix3d R;
+  R(0, 0) = H_norm(0);
+  R(1, 0) = H_norm(1);
+  R(2, 0) = H_norm(2);
+
+  R(0, 1) = M(0);
+  R(1, 1) = M(1);
+  R(2, 1) = M(2);
+
+  R(0, 2) = a_norm(0);
+  R(1, 2) = a_norm(1);
+  R(2, 2) = a_norm(2);
+
+  Eigen::Vector4d q;
+  q(0) = 0.5 * std::sqrt(1.0 + R.trace());
+  q(1) = 0.25 * (R(1, 2) - R(2, 1)) / q(0);
+  q(2) = 0.25 * (R(2, 0) - R(0, 2)) / q(0);
+  q(3) = 0.25 * (R(0, 1) - R(1, 0)) / q(0);
+
+  this->x_hat_ = EKF::normalize(q);
+  this->P_hat_ = Eigen::Matrix4d::Identity();
+
+  return this->x_hat_;
+}
+
+Eigen::Vector4d EKF::update(const Eigen::Vector3d &gyr,
+                            const Eigen::Vector3d &acc,
+                            const Eigen::Vector3d &mag, double dt) {
+  // Prediction
+  this->x_check_ = EKF::f(this->x_hat_, gyr, dt);
+
+  Eigen::Matrix4d Fk = EKF::F(gyr, dt);
+  Eigen::Matrix<double, 4, 3> Wk = EKF::W(this->x_hat_, dt);
+
+  this->P_check_ =
+      Fk * this->P_hat_ * Fk.transpose() + Wk * this->Q_ * Wk.transpose();
+
+  // Correction
+  Eigen::Matrix<double, 6, 1> z;
+  z << EKF::normalize(acc), EKF::normalize(mag);
+
+  Eigen::Matrix<double, 6, 1> innovation;
+  innovation = z - EKF::h(this->x_check_);
+
+  Eigen::Matrix<double, 6, 4> Hk = EKF::H(this->x_check_);
+
+  Eigen::Matrix<double, 6, 6> S =
+      Hk * this->P_check_ * Hk.transpose() + this->R_;
+
+  Eigen::Matrix<double, 4, 6> Kk =
+      this->P_check_ * Hk.transpose() * S.inverse();
+
+  Eigen::Vector4d x_hat = this->x_check_ + Kk * innovation;
+
+  this->x_hat_ = EKF::normalize(x_hat);
+  this->P_hat_ = this->P_check_ - Kk * Hk * this->P_check_;
+
+  return this->x_hat_;
+}
+
+Eigen::Vector3d EKF::q2euler(const Eigen::Vector4d &q) const {
+  Eigen::Vector3d E;
+  E(0) = std::atan2(2 * (q(0) * q(1) + q(2) * q(3)),
+                    1 - 2 * (q(1) * q(1) + q(2) * q(2)));
+  E(1) =
+      -M_PI_2 + 2 * std::atan2(std::sqrt(1 + 2 * (q(0) * q(2) - q(1) * q(3))),
+                               std::sqrt(1 - 2 * (q(0) * q(2) - q(1) * q(3))));
+  E(2) = std::atan2(2 * (q(0) * q(3) + q(1) * q(2)),
+                    1 - 2 * (q(2) * q(2) + q(3) * q(3)));
+
+  return E;
 }

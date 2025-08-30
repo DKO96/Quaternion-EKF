@@ -8,6 +8,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -16,25 +17,26 @@ find_package(px4_msgs REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-set(INCLUDE_DIRECTORIES
+set(PKG_DIRS
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-add_executable(ekf src/ekf.cpp)
-target_include_directories(ekf PUBLIC ${INCLUDE_DIRS})
-ament_target_dependencies(ekf rclcpp px4_msgs std_msgs Eigen3)
+add_library(ekf src/ekf.cpp)
+target_include_directories(ekf PUBLIC ${PKG_DIRS})
+ament_target_dependencies(ekf Eigen3)
 
-add_executable(quaternion_tf src/quaternion_tf.cpp)
-target_include_directories(ekf PUBLIC ${INCLUDE_DIRS})
-ament_target_dependencies(quaternion_tf rclcpp px4_msgs geometry_msgs tf2 tf2_ros Eigen3)
+add_executable(estimate src/estimate.cpp)
+target_include_directories(estimate PUBLIC ${PKG_DIRS})
+target_link_libraries(estimate ekf)
+ament_target_dependencies(estimate rclcpp px4_msgs geometry_msgs tf2 tf2_ros Eigen3)
 
 add_executable(px4_offboard src/px4_offboard.cpp)
 ament_target_dependencies(px4_offboard rclcpp px4_msgs std_msgs)
 
 install(TARGETS
   ekf
-  quaternion_tf
+  estimate
   px4_offboard
   DESTINATION lib/${PROJECT_NAME})
 
@@ -50,5 +52,13 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+install(PROGRAMS
+  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/python_ekf.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_python_install_package(ahrs
+  PACKAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ahrs/ahrs)
 
 ament_package()
