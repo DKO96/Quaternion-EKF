@@ -8,4 +8,6 @@
 /ekf_ws/src/px4_msgs
 /ekf_ws/src/px4_ros_com
 
+/ekf_ws/src/ekf_imu/scripts/ahrs
+
 .vscode/

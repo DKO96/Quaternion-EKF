@@ -1,8 +1,7 @@
-#ifndef EKF_H
-#define EKF_H
+#ifndef EKF_HPP
+#define EKF_HPP
 
 #include <Eigen/Dense>
-#include <array>
 
 class EKF {
  public:

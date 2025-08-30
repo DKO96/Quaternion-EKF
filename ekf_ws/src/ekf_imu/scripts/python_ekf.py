@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+import socket
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from tf2_ros import TransformBroadcaster
+from geometry_msgs.msg import TransformStamped
+
+from ahrs.filters import EKF
+from ahrs.common.orientation import am2q, acc2q
+
+HOST = '0.0.0.0'
+PORT = 65432
+
+class AHRSEKF(Node):
+    def __init__(self):
+        super().__init__('ahrs_ekf')
+
+        self.gyr = None
+        self.acc = None
+        self.mag = None
+        self.init = False
+        self.ekf = EKF(mag=np.zeros(3), frame='NED')
+        
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+        self.timer = self.create_timer(0.05, self.sensor_callback)
+
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.s.bind((HOST, PORT))
+        self.s.listen()
+
+        self.get_logger().info(f"Listening on {HOST}:{PORT}")
+        self.conn, addr = self.s.accept()
+        self.get_logger().info(f"Connected by {addr}")
+        self.buffer = b""
+    
+    def publish_transform(self):
+        t = TransformStamped()
+
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'world'
+        t.child_frame_id = 'ahrs_attitude'
+
+        t.transform.rotation.w = float(self.q[0])
+        t.transform.rotation.x = float(self.q[1])
+        t.transform.rotation.y = float(self.q[2])
+        t.transform.rotation.z = float(self.q[3])
+
+        self.tf_broadcaster.sendTransform(t)
+    
+    def ahrs_ekf(self):
+        if not self.init:
+            self.q = am2q(a=self.acc, m=self.mag)
+            self.init = True
+
+        self.q = self.ekf.update(q=self.q, gyr=self.gyr, acc=self.acc, mag=self.mag)
+
+        self.publish_transform()
+
+
+    def sensor_callback(self):
+        try:
+            while True:
+                data = self.conn.recv(4096)
+                if not data:
+                    print("[info] Connection closed by peer.")
+                    break
+
+                self.buffer += data
+
+                while b'\n' in self.buffer:
+                    line, self.buffer = self.buffer.split(b'\n', 1)
+                    try:
+                        values = list(map(float, line.decode().split(',')))
+                        if len(values) != 9:
+                            raise ValueError(f"Expected 9 comma-separated values, got {len(values)}")
+                        gx, gy, gz = values[:3]
+                        ax, ay, az = values[3:6]
+                        mx, my, mz = values[6:]
+
+                        self.gyr = np.array([gx, gy, gz])
+                        self.acc = np.array([ax, ay, az])
+                        self.mag = np.array([mx, -my, -mz])
+
+                        self.ahrs_ekf()
+
+                    except Exception as e:
+                        print(f"Parse error: {e}")
+                        continue
+
+        finally:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+
+            try:
+                s.close()
+            except Exception:
+                pass
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    ahrs_ekf = AHRSEKF()
+    rclpy.spin(ahrs_ekf)
+    ahrs_ekf.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

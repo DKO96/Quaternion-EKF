@@ -8,14 +8,14 @@ def generate_launch_description():
         name="offboard_control"
     )
 
-    qviz = Node(
+    estimate = Node(
         package="ekf_imu",
-        executable="quaternion_tf",
-        name="quaternion_tf"
+        executable="estimate",
+        name="estimate"
     )
 
     ld = LaunchDescription()
     ld.add_action(px4_offboard)
-    ld.add_action(qviz)
+    ld.add_action(estimate)
 
     return ld
