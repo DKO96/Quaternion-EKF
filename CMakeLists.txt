@@ -11,9 +11,9 @@ find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(px4_msgs REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
 
@@ -29,15 +29,11 @@ ament_target_dependencies(ekf Eigen3)
 add_executable(estimate src/estimate.cpp)
 target_include_directories(estimate PUBLIC ${PKG_DIRS})
 target_link_libraries(estimate ekf)
-ament_target_dependencies(estimate rclcpp px4_msgs geometry_msgs tf2 tf2_ros Eigen3)
-
-add_executable(px4_offboard src/px4_offboard.cpp)
-ament_target_dependencies(px4_offboard rclcpp px4_msgs std_msgs)
+ament_target_dependencies(estimate rclcpp geometry_msgs sensor_msgs tf2 tf2_ros Eigen3)
 
 install(TARGETS
   ekf
   estimate
-  px4_offboard
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
@@ -54,7 +50,7 @@ if(BUILD_TESTING)
 endif()
 
 install(PROGRAMS
-  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/python_ekf.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/pi_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
