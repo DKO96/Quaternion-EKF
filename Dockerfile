@@ -10,10 +10,11 @@ RUN apt-get update && \
     cmake \ 
     curl \ 
     flex \ 
-    g++ \
+    gdb \
     gcc \ 
     git \
     gnupg \ 
+    g++ \
     libeigen3-dev \
     lsb-release \
     make \

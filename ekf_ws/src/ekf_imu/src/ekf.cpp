@@ -2,15 +2,15 @@
 
 #include <math.h>
 
-EKF::EKF(std::array<double, 3> noises) : noises_(noises) {
+EKF::EKF() {
   x_check_.setZero();
   P_check_.setZero();
   x_hat_.setZero();
   P_hat_.setZero();
 
-  const double sigma_g2 = noises_[0] * noises_[0];
-  const double sigma_a2 = noises_[1] * noises_[1];
-  const double sigma_m2 = noises_[2] * noises_[2];
+  const double sigma_g2 = 0.3 * 0.3;
+  const double sigma_a2 = 0.5 * 0.5;
+  const double sigma_m2 = 0.8 * 0.8;
 
   Q_.setIdentity();
   Q_ *= sigma_g2;

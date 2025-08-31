@@ -5,7 +5,7 @@
 
 class EKF {
  public:
-  EKF(std::array<double, 3> noises = {0.3, 0.5, 0.8});
+  EKF();
 
   Eigen::Vector4d initial_state(const Eigen::Vector3d &acc,
                                 const Eigen::Vector3d &mag);
