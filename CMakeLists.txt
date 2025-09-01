@@ -12,6 +12,7 @@ find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
@@ -29,7 +30,7 @@ ament_target_dependencies(ekf Eigen3)
 add_executable(estimate src/estimate.cpp)
 target_include_directories(estimate PUBLIC ${PKG_DIRS})
 target_link_libraries(estimate ekf)
-ament_target_dependencies(estimate rclcpp geometry_msgs sensor_msgs tf2 tf2_ros Eigen3)
+ament_target_dependencies(estimate rclcpp geometry_msgs message_filters sensor_msgs tf2 tf2_ros Eigen3)
 
 install(TARGETS
   ekf

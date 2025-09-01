@@ -3,7 +3,7 @@ import socket
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.clock import Clock
+from rclpy.qos import QoSProfile
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import Imu, MagneticField
@@ -18,8 +18,10 @@ class AHRSEKF(Node):
     def __init__(self):
         super().__init__('ahrs_ekf')
 
-        self.imu_publisher_ = self.create_publisher(Imu, '/sensor/imu_data', 10)
-        self.mag_publisher_ = self.create_publisher(MagneticField, '/sensor/mag_data', 10)
+        qos = QoSProfile(depth=10)
+
+        self.imu_publisher_ = self.create_publisher(Imu, '/sensor/imu', qos)
+        self.mag_publisher_ = self.create_publisher(MagneticField, '/sensor/mag', qos)
 
         self.gyr = None
         self.acc = None
