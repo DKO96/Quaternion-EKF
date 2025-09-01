@@ -22,9 +22,7 @@ EKF::EKF() {
   R_.block<3, 3>(3, 3) *= sigma_m2;
 
   g_ << 0.0, 0.0, 1.0;
-
-  const double theta = -0.17715091907742445;
-  r_ << std::cos(theta), 0.0, std::sin(theta);
+  r_ << 0.35748717, -0.06071079, 0.93194266;
 }
 
 template <int N>

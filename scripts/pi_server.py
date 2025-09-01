@@ -25,7 +25,8 @@ class AHRSEKF(Node):
         self.acc = None
         self.mag = None
         self.init = False
-        self.ekf = EKF(mag=np.zeros(3), frame='NED', magnetic_ref=-0.17715091907742445)
+        self.ekf = EKF(mag=np.zeros(3), frame='NED')
+        self.q = None
         
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -62,12 +63,13 @@ class AHRSEKF(Node):
             return
 
         self.q = self.ekf.update(q=self.q, gyr=self.gyr, acc=self.acc, mag=self.mag)
+        print(f"q: {self.q}")
 
         # self.publish_transform()
     
-    def publish_imu(self):
+    def publish_imu(self, stamp):
         msg = Imu()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = stamp 
         msg.header.frame_id = 'sensor_link'
 
         msg.orientation.x = 0.0
@@ -90,9 +92,9 @@ class AHRSEKF(Node):
 
         self.imu_publisher_.publish(msg)
 
-    def publish_mag(self):
+    def publish_mag(self, stamp):
         msg = MagneticField()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.header.frame_id = 'sensor_link'
 
         msg.magnetic_field.x = self.mag[0]
@@ -127,16 +129,11 @@ class AHRSEKF(Node):
                     self.acc = np.array([ax, ay, az])
                     self.mag = np.array([mx, -my, -mz])
 
-                    # DEBUG: Hand-rolled data for debugging
-                    # self.gyr = np.array([0.00, 0.03, -0.01])
-                    # self.acc = np.array([-0.39, 0.28, 9.69])
-                    # self.mag = np.array([4.2, -35.7, -62.25])
-
-                    self.publish_imu()
-                    self.publish_mag()
+                    stamp = self.get_clock().now().to_msg()
+                    self.publish_imu(stamp)
+                    self.publish_mag(stamp)
                     self.ahrs_ekf()
 
-                    print(f"q: {self.q}")
 
         finally:
             try:
