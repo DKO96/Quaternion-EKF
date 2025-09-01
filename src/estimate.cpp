@@ -1,4 +1,3 @@
-#include <math.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <stdint.h>
@@ -41,6 +40,7 @@ class EstimateQuaternionNode : public rclcpp::Node {
   Eigen::Vector3d gyr_, acc_, mag_;
   bool init_ekf = false;
   rclcpp::Time last_stamp;
+  rclcpp::Time stamp;
 
   EKF ekf;
 
@@ -54,7 +54,7 @@ class EstimateQuaternionNode : public rclcpp::Node {
   void estimate_quaternion(
       const sensor_msgs::msg::Imu::ConstSharedPtr &imu_msg,
       const sensor_msgs::msg::MagneticField::ConstSharedPtr &mag_msg) {
-    rclcpp::Time stamp = imu_msg->header.stamp;
+    stamp = imu_msg->header.stamp;
     gyr_ << imu_msg->angular_velocity.x, imu_msg->angular_velocity.y,
         imu_msg->angular_velocity.z;
     acc_ << imu_msg->linear_acceleration.x, imu_msg->linear_acceleration.y,
