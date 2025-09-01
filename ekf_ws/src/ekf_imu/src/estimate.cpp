@@ -1,4 +1,6 @@
 #include <math.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
 #include <stdint.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -15,52 +17,65 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-class EstimateQuaternion : public rclcpp::Node {
+class EstimateQuaternionNode : public rclcpp::Node {
  public:
-  EstimateQuaternion() : Node("estimate") {
-    subscription_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
-        "/sensor/imu_data", 10, [this](sensor_msgs::msg::Imu::UniquePtr msg) {
-          // this->timestamp_ = msg->timestamp;
-          this->gyr_ << msg->angular_velocity.x, msg->angular_velocity.y,
-              msg->angular_velocity.z;
-          this->acc_ << msg->linear_acceleration.x, msg->linear_acceleration.y,
-              msg->linear_acceleration.z;
-        });
+  EstimateQuaternionNode() : Node("estimate") {
+    rclcpp::QoS qos = rclcpp::QoS(10);
 
-    subscription_mag_ =
-        this->create_subscription<sensor_msgs::msg::MagneticField>(
-            "/sensor/mag_data", 10,
-            [this](sensor_msgs::msg::MagneticField::UniquePtr msg) {
-              this->mag_ << msg->magnetic_field.x, msg->magnetic_field.y,
-                  msg->magnetic_field.z;
-            });
+    imu_sub_.subscribe(this, "/sensor/imu", qos.get_rmw_qos_profile());
+    mag_sub_.subscribe(this, "/sensor/mag", qos.get_rmw_qos_profile());
+
+    uint32_t queue_size = 10;
+    sync_ = std::make_shared<message_filters::TimeSynchronizer<
+        sensor_msgs::msg::Imu, sensor_msgs::msg::MagneticField>>(
+        imu_sub_, mag_sub_, queue_size);
+
+    sync_->registerCallback(
+        std::bind(&EstimateQuaternionNode::estimate_quaternion, this,
+                  std::placeholders::_1, std::placeholders::_2));
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-
-    timer_ =
-        this->create_wall_timer(10ms, [this]() { this->estimate_callback(); });
   }
 
  private:
   Eigen::Vector3d gyr_, acc_, mag_;
   bool init_ekf = false;
+  rclcpp::Time last_stamp;
 
   EKF ekf;
 
-  rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr subscription_imu_;
-  rclcpp::Subscription<sensor_msgs::msg::MagneticField>::SharedPtr
-      subscription_mag_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  message_filters::Subscriber<sensor_msgs::msg::Imu> imu_sub_;
+  message_filters::Subscriber<sensor_msgs::msg::MagneticField> mag_sub_;
+  std::shared_ptr<message_filters::TimeSynchronizer<
+      sensor_msgs::msg::Imu, sensor_msgs::msg::MagneticField>>
+      sync_;
 
-  void estimate_callback() {
+  void estimate_quaternion(
+      const sensor_msgs::msg::Imu::ConstSharedPtr &imu_msg,
+      const sensor_msgs::msg::MagneticField::ConstSharedPtr &mag_msg) {
+    rclcpp::Time stamp = imu_msg->header.stamp;
+    gyr_ << imu_msg->angular_velocity.x, imu_msg->angular_velocity.y,
+        imu_msg->angular_velocity.z;
+    acc_ << imu_msg->linear_acceleration.x, imu_msg->linear_acceleration.y,
+        imu_msg->linear_acceleration.z;
+    mag_ << mag_msg->magnetic_field.x, mag_msg->magnetic_field.y,
+        mag_msg->magnetic_field.z;
+
     if (!init_ekf) {
       ekf.initial_state(acc_, mag_);
       init_ekf = true;
+      last_stamp = stamp;
       return;
     }
 
-    Eigen::Vector4d q = ekf.update(gyr_, acc_, mag_, 0.01);
+    double dt = last_stamp == rclcpp::Time(0, 0, RCL_ROS_TIME)
+                    ? 0.01
+                    : (stamp - last_stamp).seconds();
+    last_stamp = stamp;
+    dt = dt <= 0.0 ? 0.01 : dt;
+
+    Eigen::Vector4d q = ekf.update(gyr_, acc_, mag_, dt);
     std::cout << "q: " << q[0] << " " << q[1] << " " << q[2] << " " << q[3]
               << std::endl;
 
@@ -82,7 +97,7 @@ int main(int argc, char *argv[]) {
   std::cout << "Starting quaternion tf node..." << std::endl;
   setvbuf(stdout, NULL, _IONBF, BUFSIZ);
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<EstimateQuaternion>());
+  rclcpp::spin(std::make_shared<EstimateQuaternionNode>());
 
   rclcpp::shutdown();
   return 0;
