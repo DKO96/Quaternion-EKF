@@ -112,7 +112,7 @@ Eigen::Matrix<double, 4, 3> EKF::W(const Eigen::Vector4d &x_hat,
 
   W.row(0) = -0.5 * dt * qv.transpose();
 
-  Eigen::Matrix3d block = qw * Eigen::Matrix3d::Identity() - EKF::skew(qv);
+  Eigen::Matrix3d block = qw * Eigen::Matrix3d::Identity() + EKF::skew(qv);
 
   W.block<3, 3>(1, 0) = 0.5 * dt * block;
 
@@ -122,10 +122,8 @@ Eigen::Matrix<double, 4, 3> EKF::W(const Eigen::Vector4d &x_hat,
 Eigen::Matrix<double, 6, 1> EKF::h(const Eigen::Vector4d &x_check) const {
   Eigen::Matrix<double, 6, 1> est_measurement;
   const Eigen::Matrix3d R = EKF::q2R(x_check);
-  // Eigen::Vector3d a_check = R.transpose() * this->g_;
-  // Eigen::Vector3d m_check = R.transpose() * this->r_;
-  Eigen::Vector3d a_check = R * this->g_;
-  Eigen::Vector3d m_check = R * this->r_;
+  Eigen::Vector3d a_check = R.transpose() * this->g_;
+  Eigen::Vector3d m_check = R.transpose() * this->r_;
 
   Eigen::Matrix<double, 6, 1> z_check;
   z_check << a_check, m_check;
@@ -143,7 +141,7 @@ static Eigen::Matrix<double, 3, 4> temp_block(const Eigen::Vector3d &n,
   T(0, 3) = 2 * (-n(0) * q(3) + n(1) * q(0) + n(2) * q(1));
 
   T(1, 0) = 2 * (-n(0) * q(3) + n(1) * q(0) + n(2) * q(1));
-  T(1, 1) = 2 * (-n(0) * q(2) - n(1) * q(1) + n(2) * q(0));
+  T(1, 1) = 2 * (n(0) * q(2) - n(1) * q(1) + n(2) * q(0));
   T(1, 2) = 2 * (n(0) * q(1) + n(1) * q(2) + n(2) * q(3));
   T(1, 3) = 2 * (-n(0) * q(0) - n(1) * q(3) + n(2) * q(2));
 
@@ -166,27 +164,22 @@ Eigen::Matrix<double, 6, 4> EKF::H(const Eigen::Vector4d &x_check) const {
 
 Eigen::Vector4d EKF::initial_state(const Eigen::Vector3d &acc,
                                    const Eigen::Vector3d &mag) {
-  // Eigen::Vector3d H_norm = EKF::normalize(mag.cross(acc));
-  // Eigen::Vector3d a_norm = EKF::normalize(acc);
-
-  // Eigen::Vector3d M = a_norm.cross(H_norm);
-
   Eigen::Vector3d a_norm = EKF::normalize(acc);
-  Eigen::Vector3d H_norm = EKF::normalize(a_norm.cross(mag));
-  Eigen::Vector3d M = EKF::normalize(H_norm.cross(a_norm));
+  Eigen::Vector3d H_norm = EKF::normalize(mag.cross(acc));
+  Eigen::Vector3d M = a_norm.cross(H_norm);
 
   Eigen::Matrix3d R;
-  R(0, 0) = H_norm(0);
-  R(1, 0) = H_norm(1);
-  R(2, 0) = H_norm(2);
+  R(0, 0) = M(0);
+  R(1, 0) = M(1);
+  R(2, 0) = M(2);
 
-  R(0, 1) = M(0);
-  R(1, 1) = M(1);
-  R(2, 1) = M(2);
+  R(0, 1) = H_norm(0);
+  R(1, 1) = H_norm(1);
+  R(2, 1) = H_norm(2);
 
-  R(0, 2) = a_norm(0);
-  R(1, 2) = a_norm(1);
-  R(2, 2) = a_norm(2);
+  R(0, 2) = -a_norm(0);
+  R(1, 2) = -a_norm(1);
+  R(2, 2) = -a_norm(2);
 
   Eigen::Vector4d q;
   q(0) = 0.5 * std::sqrt(1.0 + R.trace());
