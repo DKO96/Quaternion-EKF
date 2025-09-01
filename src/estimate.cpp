@@ -54,15 +54,31 @@ class EstimateQuaternion : public rclcpp::Node {
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   void estimate_callback() {
+    // gyr_ = {0.00, 0.03, -0.01};
+    // acc_ = {-0.39, 0.28, 9.69};
+    // mag_ = {4.2, -35.7, -62.25};
+
     if (!init_ekf) {
       ekf.initial_state(acc_, mag_);
       init_ekf = true;
       return;
     }
 
-    // Eigen::Vector4d q = ekf.update(gyr_, acc_, mag_, 0.01);
-    // std::cout << "q: " << q[0] << " " << q[1] << " " << q[2] << " " << q[3]
-    //           << std::endl;
+    Eigen::Vector4d q = ekf.update(gyr_, acc_, mag_, 0.01);
+    std::cout << "q: " << q[0] << " " << q[1] << " " << q[2] << " " << q[3]
+              << std::endl;
+
+    geometry_msgs::msg::TransformStamped t;
+    t.header.stamp = this->get_clock()->now();
+    t.header.frame_id = "world";
+    t.child_frame_id = "sensor_link";
+
+    t.transform.rotation.w = q(0);
+    t.transform.rotation.x = q(0);
+    t.transform.rotation.y = q(0);
+    t.transform.rotation.z = q(0);
+
+    tf_broadcaster_->sendTransform(t);
   }
 };
 
