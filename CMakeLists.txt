@@ -37,11 +37,8 @@ install(TARGETS
   estimate
   DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY launch
+install(DIRECTORY launch include urdf rviz
   DESTINATION share/${PROJECT_NAME})
-
-install(DIRECTORY include
-  DESTINATION include)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -54,8 +51,5 @@ install(PROGRAMS
   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/pi_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
-
-ament_python_install_package(ahrs
-  PACKAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ahrs/ahrs)
 
 ament_package()

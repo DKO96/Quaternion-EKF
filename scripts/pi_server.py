@@ -4,19 +4,14 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
-from tf2_ros import TransformBroadcaster
-from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import Imu, MagneticField
-
-from ahrs.filters import EKF
-from ahrs.common.orientation import am2q, acc2q
 
 HOST = '0.0.0.0'
 PORT = 65432
 
-class AHRSEKF(Node):
+class PiServer(Node):
     def __init__(self):
-        super().__init__('ahrs_ekf')
+        super().__init__('pi_server')
 
         qos = QoSProfile(depth=10)
 
@@ -26,13 +21,6 @@ class AHRSEKF(Node):
         self.gyr = None
         self.acc = None
         self.mag = None
-        self.init = False
-        self.ekf = EKF(mag=np.zeros(3), frame='NED')
-        self.q = None
-        
-        self.tf_broadcaster = TransformBroadcaster(self)
-
-        self.timer = self.create_timer(0.05, self.sensor_callback)
 
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -43,31 +31,8 @@ class AHRSEKF(Node):
         self.conn, addr = self.s.accept()
         self.get_logger().info(f"Connected by {addr}")
         self.buffer = b""
-    
-    def publish_transform(self):
-        t = TransformStamped()
 
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'world'
-        t.child_frame_id = 'sensor_link'
-
-        t.transform.rotation.w = float(self.q[0])
-        t.transform.rotation.x = float(self.q[1])
-        t.transform.rotation.y = float(self.q[2])
-        t.transform.rotation.z = float(self.q[3])
-
-        self.tf_broadcaster.sendTransform(t)
-    
-    def ahrs_ekf(self):
-        if not self.init:
-            self.q = am2q(a=self.acc, m=self.mag, frame='NED')
-            self.init = True
-            return
-
-        self.q = self.ekf.update(q=self.q, gyr=self.gyr, acc=self.acc, mag=self.mag)
-        print(f"q: {self.q}")
-
-        # self.publish_transform()
+        self.timer = self.create_timer(0.01, self.sensor_callback)
     
     def publish_imu(self, stamp):
         msg = Imu()
@@ -134,8 +99,6 @@ class AHRSEKF(Node):
                     stamp = self.get_clock().now().to_msg()
                     self.publish_imu(stamp)
                     self.publish_mag(stamp)
-                    self.ahrs_ekf()
-
 
         finally:
             try:
@@ -151,9 +114,9 @@ class AHRSEKF(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    ahrs_ekf = AHRSEKF()
-    rclpy.spin(ahrs_ekf)
-    ahrs_ekf.destroy_node()
+    pi_server = PiServer()
+    rclpy.spin(pi_server)
+    pi_server.destroy_node()
     rclpy.shutdown()
 
 
