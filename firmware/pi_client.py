@@ -7,8 +7,7 @@ import numpy as np
 i2c = board.I2C()
 icm = adafruit_icm20x.ICM20948(i2c)
 
-#HOST = '192.168.0.2'  # PC's ethernet IP address
-HOST = '192.168.0.40'  # PC's wifi IP address
+# HOST IP
 PORT = 65432
 
 def main():
