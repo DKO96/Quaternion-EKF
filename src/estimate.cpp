@@ -76,6 +76,11 @@ class EstimateQuaternionNode : public rclcpp::Node {
     dt = dt <= 0.0 ? 0.01 : dt;
 
     Eigen::Vector4d q = ekf.update(gyr_, acc_, mag_, dt);
+    Eigen::Vector3d euler = ekf.q2euler(q);
+
+    std::cout << "r: " << euler(0) << "  "
+              << "p: " << euler(1) << "  "
+              << "y: " << euler(2) << "  " << std::endl;
 
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = this->get_clock()->now();
