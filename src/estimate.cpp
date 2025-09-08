@@ -63,7 +63,8 @@ class EstimateQuaternionNode : public rclcpp::Node {
         mag_msg->magnetic_field.z;
 
     if (!init_ekf) {
-      ekf.initial_state(acc_, mag_);
+      ekf.initial_state_6dof(acc_);
+      // ekf.initial_state(acc_, mag_);
       init_ekf = true;
       last_stamp = stamp;
       return;

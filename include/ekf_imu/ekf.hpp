@@ -9,7 +9,7 @@ class EKF {
 
   Eigen::Vector4d initial_state(const Eigen::Vector3d &acc,
                                 const Eigen::Vector3d &mag);
-
+  Eigen::Vector4d initial_state_6dof(const Eigen::Vector3d &acc);
   Eigen::Vector4d update(const Eigen::Vector3d &gyr, const Eigen::Vector3d &acc,
                          const Eigen::Vector3d &mag, double dt);
   Eigen::Vector3d q2euler(const Eigen::Vector4d &q) const;
@@ -22,6 +22,7 @@ class EKF {
   Eigen::Matrix4d P_hat_;
 
   Eigen::Matrix3d Q_;
+  Eigen::Matrix3d R_6dof_;
   Eigen::Matrix<double, 6, 6> R_;
 
   Eigen::Vector3d g_;
@@ -33,6 +34,8 @@ class EKF {
   Eigen::Matrix<double, 4, 3> W(const Eigen::Vector4d &x_hat, double dt) const;
   Eigen::Matrix<double, 6, 1> h(const Eigen::Vector4d &x_check) const;
   Eigen::Matrix<double, 6, 4> H(const Eigen::Vector4d &x_check) const;
+  Eigen::Matrix<double, 3, 1> h_6dof(const Eigen::Vector4d &x_check) const;
+  Eigen::Matrix<double, 3, 4> H_6dof(const Eigen::Vector4d &x_check) const;
 
   template <int N>
   Eigen::Matrix<double, N, 1> normalize(

@@ -21,6 +21,10 @@ EKF::EKF() {
   R_.block<3, 3>(3, 3).setIdentity();
   R_.block<3, 3>(3, 3) *= sigma_m2;
 
+  R_6dof_.setZero();
+  R_6dof_.block<3, 3>(0, 0).setIdentity();
+  R_6dof_.block<3, 3>(0, 0) *= sigma_a2;
+
   g_ << 0.0, 0.0, 1.0;
   r_ << 0.35748717, -0.06071079, 0.93194266;
 }
@@ -129,6 +133,14 @@ Eigen::Matrix<double, 6, 1> EKF::h(const Eigen::Vector4d &x_check) const {
   return z_check;
 }
 
+Eigen::Matrix<double, 3, 1> EKF::h_6dof(const Eigen::Vector4d &x_check) const {
+  Eigen::Matrix<double, 3, 1> est_measurement;
+  const Eigen::Matrix3d R = EKF::q2R(x_check);
+  Eigen::Vector3d a_check = R.transpose() * this->g_;
+
+  return a_check;
+}
+
 static Eigen::Matrix<double, 3, 4> temp_block(const Eigen::Vector3d &n,
                                               const Eigen::Vector4d &q) {
   Eigen::Matrix<double, 3, 4> T;
@@ -156,6 +168,14 @@ Eigen::Matrix<double, 6, 4> EKF::H(const Eigen::Vector4d &x_check) const {
 
   H.topRows<3>() = temp_block(this->g_, x_check);
   H.bottomRows<3>() = temp_block(this->r_, x_check);
+
+  return H;
+}
+
+Eigen::Matrix<double, 3, 4> EKF::H_6dof(const Eigen::Vector4d &x_check) const {
+  Eigen::Matrix<double, 3, 4> H;
+
+  H.topRows<3>() = temp_block(this->g_, x_check);
 
   return H;
 }
@@ -191,6 +211,30 @@ Eigen::Vector4d EKF::initial_state(const Eigen::Vector3d &acc,
   return this->x_hat_;
 }
 
+Eigen::Vector4d EKF::initial_state_6dof(const Eigen::Vector3d &acc) {
+  Eigen::Vector3d a_norm = EKF::normalize(acc);
+
+  double ex = std::atan2(a_norm(1), a_norm(2));
+  double ey = std::atan2(
+      -a_norm(0), std::sqrt(a_norm(1) * a_norm(1) + a_norm(2) * a_norm(2)));
+
+  double cx2 = std::cos(ex / 2.0);
+  double sx2 = std::sin(ex / 2.0);
+  double cy2 = std::cos(ey / 2.0);
+  double sy2 = std::sin(ey / 2.0);
+
+  Eigen::Vector4d q;
+  q(0) = cx2 * cy2;
+  q(1) = sx2 * cy2;
+  q(2) = cx2 * sy2;
+  q(3) = -sx2 * sy2;
+
+  this->x_hat_ = EKF::normalize(q);
+  this->P_hat_ = Eigen::Matrix4d::Identity();
+
+  return this->x_hat_;
+}
+
 Eigen::Vector4d EKF::update(const Eigen::Vector3d &gyr,
                             const Eigen::Vector3d &acc,
                             const Eigen::Vector3d &mag, double dt) {
@@ -203,19 +247,34 @@ Eigen::Vector4d EKF::update(const Eigen::Vector3d &gyr,
   this->P_check_ =
       Fk * this->P_hat_ * Fk.transpose() + Wk * this->Q_ * Wk.transpose();
 
-  // Correction
-  Eigen::Matrix<double, 6, 1> z;
-  z << EKF::normalize(acc), EKF::normalize(mag);
+  // // Correction
+  // Eigen::Matrix<double, 6, 1> z;
+  // z << EKF::normalize(acc), EKF::normalize(mag);
 
-  Eigen::Matrix<double, 6, 1> innovation;
-  innovation = z - EKF::h(this->x_check_);
+  // Eigen::Matrix<double, 6, 1> innovation;
+  // innovation = z - EKF::h(this->x_check_);
 
-  Eigen::Matrix<double, 6, 4> Hk = EKF::H(this->x_check_);
+  // Eigen::Matrix<double, 6, 4> Hk = EKF::H(this->x_check_);
 
-  Eigen::Matrix<double, 6, 6> S =
-      Hk * this->P_check_ * Hk.transpose() + this->R_;
+  // Eigen::Matrix<double, 6, 6> S =
+  //     Hk * this->P_check_ * Hk.transpose() + this->R_;
 
-  Eigen::Matrix<double, 4, 6> Kk =
+  // Eigen::Matrix<double, 4, 6> Kk =
+  //     this->P_check_ * Hk.transpose() * S.inverse();
+
+  // Correction_6dof
+  Eigen::Matrix<double, 3, 1> z;
+  z << EKF::normalize(acc);
+
+  Eigen::Matrix<double, 3, 1> innovation;
+  innovation = z - EKF::h_6dof(this->x_check_);
+
+  Eigen::Matrix<double, 3, 4> Hk = EKF::H_6dof(this->x_check_);
+
+  Eigen::Matrix<double, 3, 3> S =
+      Hk * this->P_check_ * Hk.transpose() + this->R_6dof_;
+
+  Eigen::Matrix<double, 4, 3> Kk =
       this->P_check_ * Hk.transpose() * S.inverse();
 
   Eigen::Vector4d x_hat = this->x_check_ + Kk * innovation;
