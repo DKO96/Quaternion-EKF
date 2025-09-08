@@ -247,7 +247,7 @@ Eigen::Vector4d EKF::update(const Eigen::Vector3d &gyr,
   this->P_check_ =
       Fk * this->P_hat_ * Fk.transpose() + Wk * this->Q_ * Wk.transpose();
 
-  // // Correction
+  // Correction
   // Eigen::Matrix<double, 6, 1> z;
   // z << EKF::normalize(acc), EKF::normalize(mag);
 
