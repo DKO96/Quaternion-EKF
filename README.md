@@ -1,4 +1,5 @@
 # Quaternion-based EKF in ROS2 Jazzy
 
-![Demo](media/demo.gif)
-
+<p align="center">
+  <img src="media/demo.gif" alt="Demo"/>
+</p>
