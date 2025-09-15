@@ -63,8 +63,8 @@ class EstimateQuaternionNode : public rclcpp::Node {
         mag_msg->magnetic_field.z;
 
     if (!init_ekf) {
-      ekf.initial_state_6dof(acc_);
-      // ekf.initial_state(acc_, mag_);
+      // ekf.initial_state_6dof(acc_);
+      ekf.initial_state(acc_, mag_);
       init_ekf = true;
       last_stamp = stamp;
       return;
@@ -76,7 +76,7 @@ class EstimateQuaternionNode : public rclcpp::Node {
     last_stamp = stamp;
     dt = dt <= 0.0 ? 0.01 : dt;
 
-    Eigen::Vector4d q = ekf.update(gyr_, acc_, mag_, dt);
+    Eigen::Quaterniond q = ekf.update(gyr_, acc_, mag_, dt);
     Eigen::Vector3d euler = ekf.q2euler(q);
 
     std::cout << "r: " << euler(0) << "  "
@@ -88,10 +88,10 @@ class EstimateQuaternionNode : public rclcpp::Node {
     t.header.frame_id = "world";
     t.child_frame_id = "sensor_link";
 
-    t.transform.rotation.w = q(0);
-    t.transform.rotation.x = q(1);
-    t.transform.rotation.y = q(2);
-    t.transform.rotation.z = q(3);
+    t.transform.rotation.w = q.w();
+    t.transform.rotation.x = q.x();
+    t.transform.rotation.y = q.y();
+    t.transform.rotation.z = q.z();
 
     tf_broadcaster_->sendTransform(t);
   }

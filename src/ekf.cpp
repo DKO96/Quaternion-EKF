@@ -27,6 +27,9 @@ EKF::EKF() {
 
   g_ << 0.0, 0.0, 1.0;
   r_ << 0.35748717, -0.06071079, 0.93194266;
+
+  q_offset = {0.9744999, 0.2077073, -0.0830326, -0.0176978};
+  // q_offset = {1.0, 0.0, 0.0, 0.0};
 }
 
 template <int N>
@@ -235,9 +238,9 @@ Eigen::Vector4d EKF::initial_state_6dof(const Eigen::Vector3d &acc) {
   return this->x_hat_;
 }
 
-Eigen::Vector4d EKF::update(const Eigen::Vector3d &gyr,
-                            const Eigen::Vector3d &acc,
-                            const Eigen::Vector3d &mag, double dt) {
+Eigen::Quaterniond EKF::update(const Eigen::Vector3d &gyr,
+                               const Eigen::Vector3d &acc,
+                               const Eigen::Vector3d &mag, double dt) {
   // Prediction
   this->x_check_ = EKF::f(this->x_hat_, gyr, dt);
 
@@ -248,52 +251,67 @@ Eigen::Vector4d EKF::update(const Eigen::Vector3d &gyr,
       Fk * this->P_hat_ * Fk.transpose() + Wk * this->Q_ * Wk.transpose();
 
   // Correction
-  // Eigen::Matrix<double, 6, 1> z;
-  // z << EKF::normalize(acc), EKF::normalize(mag);
+  Eigen::Matrix<double, 6, 1> z;
+  z << EKF::normalize(acc), EKF::normalize(mag);
 
-  // Eigen::Matrix<double, 6, 1> innovation;
-  // innovation = z - EKF::h(this->x_check_);
+  Eigen::Matrix<double, 6, 1> innovation;
+  innovation = z - EKF::h(this->x_check_);
 
-  // Eigen::Matrix<double, 6, 4> Hk = EKF::H(this->x_check_);
+  Eigen::Matrix<double, 6, 4> Hk = EKF::H(this->x_check_);
 
-  // Eigen::Matrix<double, 6, 6> S =
-  //     Hk * this->P_check_ * Hk.transpose() + this->R_;
+  Eigen::Matrix<double, 6, 6> S =
+      Hk * this->P_check_ * Hk.transpose() + this->R_;
 
-  // Eigen::Matrix<double, 4, 6> Kk =
-  //     this->P_check_ * Hk.transpose() * S.inverse();
+  Eigen::Matrix<double, 4, 6> Kk =
+      this->P_check_ * Hk.transpose() * S.inverse();
 
   // Correction_6dof
-  Eigen::Matrix<double, 3, 1> z;
-  z << EKF::normalize(acc);
+  // Eigen::Matrix<double, 3, 1> z;
+  // z << EKF::normalize(acc);
 
-  Eigen::Matrix<double, 3, 1> innovation;
-  innovation = z - EKF::h_6dof(this->x_check_);
+  // Eigen::Matrix<double, 3, 1> innovation;
+  // innovation = z - EKF::h_6dof(this->x_check_);
 
-  Eigen::Matrix<double, 3, 4> Hk = EKF::H_6dof(this->x_check_);
+  // Eigen::Matrix<double, 3, 4> Hk = EKF::H_6dof(this->x_check_);
 
-  Eigen::Matrix<double, 3, 3> S =
-      Hk * this->P_check_ * Hk.transpose() + this->R_6dof_;
+  // Eigen::Matrix<double, 3, 3> S =
+  //     Hk * this->P_check_ * Hk.transpose() + this->R_6dof_;
 
-  Eigen::Matrix<double, 4, 3> Kk =
-      this->P_check_ * Hk.transpose() * S.inverse();
+  // Eigen::Matrix<double, 4, 3> Kk =
+  //     this->P_check_ * Hk.transpose() * S.inverse();
 
   Eigen::Vector4d x_hat = this->x_check_ + Kk * innovation;
 
   this->x_hat_ = EKF::normalize(x_hat);
   this->P_hat_ = this->P_check_ - Kk * Hk * this->P_check_;
 
-  return this->x_hat_;
+  // Debug adding offset quaternion
+  Eigen::Quaterniond x_temp_ = {this->x_hat_(0), this->x_hat_(1),
+                                this->x_hat_(2), this->x_hat_(3)};
+  Eigen::Quaterniond x_hat_offset = q_offset * x_temp_;
+
+  return x_hat_offset;
 }
 
-Eigen::Vector3d EKF::q2euler(const Eigen::Vector4d &q) const {
+Eigen::Vector3d EKF::q2euler(const Eigen::Quaterniond &q) const {
   Eigen::Vector3d E;
-  E(0) = std::atan2(2 * (q(0) * q(1) + q(2) * q(3)),
-                    1 - 2 * (q(1) * q(1) + q(2) * q(2)));
-  E(1) =
-      -M_PI_2 + 2 * std::atan2(std::sqrt(1 + 2 * (q(0) * q(2) - q(1) * q(3))),
-                               std::sqrt(1 - 2 * (q(0) * q(2) - q(1) * q(3))));
-  E(2) = std::atan2(2 * (q(0) * q(3) + q(1) * q(2)),
-                    1 - 2 * (q(2) * q(2) + q(3) * q(3)));
+  // E(0) = std::atan2(2 * (q(0) * q(1) + q(2) * q(3)),
+  //                   1 - 2 * (q(1) * q(1) + q(2) * q(2)));
+  // E(1) =
+  //     -M_PI_2 + 2 * std::atan2(std::sqrt(1 + 2 * (q(0) * q(2) - q(1) *
+  //     q(3))),
+  //                              std::sqrt(1 - 2 * (q(0) * q(2) - q(1) *
+  //                              q(3))));
+  // E(2) = std::atan2(2 * (q(0) * q(3) + q(1) * q(2)),
+  //                   1 - 2 * (q(2) * q(2) + q(3) * q(3)));
+
+  E(0) = std::atan2(2 * (q.w() * q.x() + q.y() * q.z()),
+                    1 - 2 * (q.x() * q.x() + q.y() * q.y()));
+  E(1) = -M_PI_2 +
+         2 * std::atan2(std::sqrt(1 + 2 * (q.w() * q.y() - q.x() * q.z())),
+                        std::sqrt(1 - 2 * (q.w() * q.y() - q.x() * q.z())));
+  E(2) = std::atan2(2 * (q.w() * q.z() + q.x() * q.y()),
+                    1 - 2 * (q.y() * q.y() + q.z() * q.z()));
 
   return E;
 }
